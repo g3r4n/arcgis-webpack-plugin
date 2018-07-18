@@ -1,5 +1,14 @@
 # @arcgis/webpack-plugin
 
+[![npm version][npm-img]][npm-url]
+[![build status][travis-img]][travis-url]
+[![apache licensed](https://img.shields.io/badge/license-Apache%202.0-orange.svg?style=flat-square)](https://raw.githubusercontent.com/Esri/arcgis-webpack-plugin/master/LICENSE)
+
+[npm-img]: https://img.shields.io/npm/v/@arcgis/webpack-plugin.svg?style=flat-square
+[npm-url]: https://www.npmjs.com/package/@arcgis/webpack-plugin
+[travis-img]: https://img.shields.io/travis/Esri/arcgis-webpack-plugin/master.svg?style=flat-square
+[travis-url]: https://travis-ci.org/Esri/arcgis-webpack-plugin
+
 Build ArcGIS API for JavaScript applications with webpack
 
 * [Features](#features)
@@ -9,10 +18,13 @@ Build ArcGIS API for JavaScript applications with webpack
   * [Loaders](#loaders)
   * [Promises](#promises)
   * [Node Globals](#node-globals)
-  * [Web Assembly Files](#web-assembly-files)
   * [CSS](#css)
+  * [Asset Loaders](#asset-loaders)
+  * [Excluding Modules](#excluding-modules)
+* [Sample Applications](#sample-applications)
 * [How does it work?](#how-does-it-work)
   * [Required Files](#required-files)
+  * [Feature Detection](#feature-detection)
   * [Override loader plugins](#override-loader-plugins)
   * [Other loaders](#other-loaders)
   * [Loader Configuration](#loader-configuration)
@@ -88,9 +100,12 @@ esriConfig.workers.loaderConfig = {
 
 | Options     |     Default     | Description   |
 | ----------- | :-------------: |:-------------|
+| `useDefaultAssetLoaders` | `true` | By default, this plugin provides [url-loader](https://github.com/webpack-contrib/url-loader) for images and [file-loader](https://github.com/webpack-contrib/file-loader) for fonts and svg that are used by the ArcGIS API for JavaScript. If you are using another library that requires you to also load assets, you may want to disable the default loaders of this plugin and use your own. |
 | `root`    | `"."` | Is used in the `env` passed to your loader configuration. See [environment](https://github.com/OpenNTF/dojo-webpack-plugin#environment) details in the dojo-webpack-plugin.  |
-| `locales` | `["en"]`  | The locales you want included in your build output. See the [locales](https://github.com/OpenNTF/dojo-webpack-plugin#locales) details of the dojo-webpack-plugin.  |
-| `options` | `undefined` | You can pass any [native options of the dojo-webpack-plugin](https://github.com/OpenNTF/dojo-webpack-plugin#options) if you want to override some of the defaults of this plugin. This would also allow you to use your own [loaderConfig](https://github.com/OpenNTF/dojo-webpack-plugin#loaderconfig) instead of the default one. |
+| `locales` | `undefined`  | The locales you want included in your build output. See the [locales](https://github.com/OpenNTF/dojo-webpack-plugin#locales) details of the dojo-webpack-plugin.  |
+| `exclude3D` | `false` | **ADVANCED** - You can choose to exlcude all 3D related modules from the output bundles. This does not reduce the file size of the output JavaScript, but will reduce the number of bundles generated for the ArcGIS API for JavaScript. |
+| `userDefinedExcludes` | `[]` | **ADVANCED** - You can provide an array modules as `string` that you want to exclude from the output bundles. For example, you may want to exclude layers you are not using. |
+| `options` | `undefined` | **ADVANCED** - You can pass any [native options of the dojo-webpack-plugin](https://github.com/OpenNTF/dojo-webpack-plugin#options) if you want to override some of the defaults of this plugin. This would also allow you to use your own [loaderConfig](https://github.com/OpenNTF/dojo-webpack-plugin#loaderconfig) instead of the default one. |
 
 # Best Practices
 
@@ -116,6 +131,9 @@ plugins: [
     // "../app" or similar depending on your build.
     // most likely do not need to change
     root: ".",
+    // If you specify locales in the build
+    // only those locales are available ar runtime.
+    // Leave undefined and all locales will be available at runtime.
     locales: ["en"]
   })
 ];
@@ -151,12 +169,11 @@ That means that for TypeScript, your `tsconfig.json` should have the following o
 
 ```
 
-If you are using babel, be sure to include the [ES2015 modules to AMD transform plugin](https://babeljs.io/docs/plugins/transform-es2015-modules-amd/). Once installed you can add to your babel configuration as:
+For babel, update your configuration as follow :
 
 ```json
 {
-  "presets": ["@babel/preset-env"],
-  "plugins": ["transform-es2015-modules-amd"]
+  "presets": [["@babel/preset-env",{"modules":"amd"}]]
 }
 ```
 
@@ -170,35 +187,21 @@ See [options](#options) section for details of options you can provide to the pl
 
 ## Node globals
 
-It is recommended that you ignore the node `process` and `global`, so they don't get built into your bundle.
+It is recommended that you ignore the node `process` and `global`, so they don't get built into your bundle. You want to set the `fs` module to `empty` so that the webassembly files of the [client-side projection engine](https://developers.arcgis.com/javascript/latest/api-reference/esri-geometry-projection.html) are loaded correctly.
 
 ```js
 // webpack.config.js
   node: {
     process: false,
-    global: false
+    global: false,
+    fs: "empty"
   }
-```
-
-## Web Assembly files
-
-You will want to tell Webpack to ignore the web assembly files that are included in the ArcGIS API for JavaScript. They are utilized in the workers, which for the time being, need to be loaded via the CDN as noted above.
-
-```js
-// webpack.config.js
-  externals: [
-    (context, request, callback) => {
-      if (/pe-wasm$/.test(request)) {
-        return callback(null, "amd " + request);
-      }
-      callback();
-    }
-  ],
 ```
 
 ## CSS
 
 When working with CSS, you can load the files directly from your application and let the [`html-webpack-plugin`](https://github.com/jantimon/html-webpack-plugin) and [`mini-css-extract-plugin`](https://github.com/webpack-contrib/mini-css-extract-plugin) output the CSS file and inject the file location directly into your output HTML file.
+Note: mini-css-extract-plugin requires webpack 4 to work. If you are using webpack 3, you can use the [`extract-text-webpack-plugin`](https://github.com/webpack-contrib/extract-text-webpack-plugin).
 
 ```ts
 import "./css/main.scss";
@@ -270,6 +273,110 @@ import "css!./css/main.scss";
 
 Please note, we have tested the `@arcgis/webpack-plugin` with numerous other plugins, but cannot guarantee that other webpack plugins may not cause some unexpected behavior.
 
+## Asset Loaders
+
+By default, this plugin provides provides [url-loader](https://github.com/webpack-contrib/url-loader) for images and [file-loader](https://github.com/webpack-contrib/file-loader) for assets that are only used by the ArcGIS API for JavaScript. However, if you are using another library that you need to load image, svg, or fonts for, you will want to provide your own loaders. You will want to set the `useDefaultAssetLoaders` to `false`.
+
+```js
+// webpack.config.js
+...
+plugins: [
+  new ArcGISPlugin({
+    // disable provided asset loaders
+    useDefaultAssetLoaders: false
+  })
+],
+...
+```
+
+Then you can provide your own asset loaders.
+
+
+```js
+// webpack.config.js
+...
+  module: {
+    rules: [
+      ...
+      {
+        test: /\.(jpe?g|png|gif|webp)$/,
+        loader: "url-loader",
+        options: {
+          // Inline files smaller than 10 kB (10240 bytes)
+          limit: 10 * 1024,
+        }
+      },
+      {
+        test: /\.(wsv|ttf|otf|eot|svg|woff(2)?)(\?[a-z0-9]+)?$/,
+        use: [
+          {
+            loader: "file-loader",
+            options: {
+              name: "build/[name].[ext]"
+            }
+          }
+        ]
+      }
+    ]
+  }
+...
+
+```
+
+## Excluding Modules
+
+**NOTE - _Advanced Usage_**
+
+If you are building a 2D mapping application and do not require 3D, you can exclude 3D related modules by disabling the 3d `features`. This option will remove 3D modules from the output JavaScript bundles for your application. Please note, _this does not impact the file size of the JavaScript used in your application, only in the number of bundles generated_.
+
+```js
+// webpack.config.js
+...
+plugins: [
+  new ArcGISPlugin({
+    // exclude 3D modules from build
+    features: {
+      "3d": false
+    }
+  })
+],
+...
+```
+
+You also have the option to pass in an array of other modules that you may want to exclude from your application. For example, maybe you are not using a particular set of layers. You can add them to the `userDefinedExcludes` option.
+
+```js
+// webpack.config.js
+...
+plugins: [
+  new ArcGISPlugin({
+    // exclude modules you do not need
+    userDefinedExcludes: [
+      "arcgis-js-api/layers/BingMapsLayer",
+      "arcgis-js-api/layers/CSVLayer",
+      "arcgis-js-api/layers/GeoRSSLayer",
+      "arcgis-js-api/layers/ImageryLayer",
+      "arcgis-js-api/layers/KMLLayer",
+      "arcgis-js-api/layers/MapImageLayer",
+      "arcgis-js-api/layers/OpenStreetMapLayer",
+      "arcgis-js-api/layers/StreamLayer",
+      "arcgis-js-api/layers/WMSLayer",
+      "arcgis-js-api/layers/WMTSLayer",
+      "arcgis-js-api/layers/WebTileLayer"
+    ]
+  })
+],
+...
+```
+
+Again, this considered **ADVANCED** usage, so please use with caution.
+
+# Sample Applications
+
+Here are some example applications that you can try out for yourself:
+- TypeScript: https://github.com/Esri/jsapi-resources/tree/master/4.x/webpack/demo
+- Babel: https://github.com/odoe/jsapi-webpack
+
 # How does it work?
 
 This plugin utilizes the [`dojo-webpack-plugin`](https://github.com/OpenNTF/dojo-webpack-plugin) and provides some default settings out-of-the-box.
@@ -291,23 +398,28 @@ const requiredPlugins = [
     },
     {
       context: "node_modules",
-      from: "dojo/dojo.js",
-      to: "dojo/dojo.js"
+      from: "@arcgis/webpack-plugin/extras/dojo/",
+      to: "dojo/"
     },
     {
       context: "node_modules",
-      from: "dojo/dojo.js",
+      from: "@arcgis/webpack-plugin/extras/dojo/dojo.js",
       to: "dojo/dojo-lite.js"
     },
     {
       context: "node_modules",
-      from: "dojo/request/script.js",
-      to: "dojo/request/script.js"
+      from: "arcgis-js-api/core/request/iframe.html",
+      to: "arcgis-js-api/core/request/iframe.html"
     },
     {
       context: "node_modules",
       from: "arcgis-js-api/views/3d/environment/resources/stars.wsv",
       to: "arcgis-js-api/views/3d/environment/resources/stars.wsv"
+    },
+    {
+      context: "node_modules",
+      from: "arcgis-js-api/geometry/support/pe-wasm.wasm",
+      to: "arcgis-js-api/geometry/support/pe-wasm.wasm"
     },
     {
       context: "node_modules",
@@ -333,6 +445,51 @@ const requiredPlugins = [
   ...
 ];
 ```
+
+## Feature Detection
+
+This plugin also utilizes the [webpack-hasjs-plugin](https://github.com/chuckdumont/webpack-hasjs-plugin) to set compile time static features that help enable the removal of unused code.
+
+```js
+const requiredPlugins = [
+  ...
+  // Check for has() features in the build
+  // Feature list taken directly from what is
+  // used in Dojo builds
+  new HasJsPlugin({
+    features: {
+      "some-static-feature": false
+    }
+  }),
+  ...
+];
+```
+
+There are cases in the ArcGIS API for JavaScript where feature detection is used.
+
+```js
+if (has("some-static-feature")) {
+  return true;
+}
+else {
+  return false;
+}
+```
+
+This will be converted to the following.
+
+```js
+if (false) {
+  return true;
+}
+else {
+  return false;
+}
+```
+
+So when the code is run through the build and minification becomes only `return false`.
+
+Please refer to the webpack-hasjs-plugin for [known limitations](https://github.com/chuckdumont/webpack-hasjs-plugin#limitations).
 
 ## Override loader plugins
 
@@ -364,7 +521,8 @@ const additionalLoaders = [
     use: "umd-compat-loader"
   },
   {
-    test: /\.(jpe?g|png|gif|webp)$/,
+    // scoped to the arcgis-js-api resources only
+    test: /arcgis-js-api\/.*(jpe?g|png|gif|webp)$/,
     loader: "url-loader",
     options: {
       // Inline files smaller than 10 kB (10240 bytes)
@@ -372,7 +530,8 @@ const additionalLoaders = [
     }
   },
   {
-    test: /.(wsv|ttf|otf|eot|svg|woff(2)?)(\?[a-z0-9]+)?$/,
+    // scoped to the arcgis-js-api resources only
+    test: /arcgis-js-api\/.*(wsv|ttf|otf|eot|svg|woff(2)?)(\?[a-z0-9]+)?$/,
     use: [
       {
         loader: "file-loader",
@@ -395,8 +554,7 @@ this.options = {
   },
   buildEnvironment: {
     root: "node_modules"
-  },
-  locales: options.locales || ["en"]
+  }
 };
 this.options = { ...this.options, ...options.options };
 if (!this.options.loaderConfig) {
@@ -425,7 +583,7 @@ We provide some default `has` configurations of the loader.
 
 # Things we're working on
 
-1.  Compatibility with [`DllPlugin`](https://webpack.js.org/plugins/dll-plugin/). We're trying to find how we can create a single Dll or multiple Dlls file to share across multiple applications.
+1.  Compatibility with [`DllPlugin`](https://webpack.js.org/plugins/dll-plugin/). We're trying to find how we can create a single Dll or multiple Dll files to share across multiple applications.
 2.  Improved bundles. We're going to be working towards trying to reduce the number of bundles that Webpack generates due to how we dynamically import modules at runtime.
 
 # Issues
